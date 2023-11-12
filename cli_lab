@@ -1,0 +1,23 @@
+#! /bin/bash/
+
+SUBNET=$(aws ec2 describe-subnets --filters 'Name=tag:Name,Values=Public Subnet' --query Subnets[].SubnetId --output text)
+
+LAB_VPC_ID=$(aws ec2 describe-vpcs --filters 'Name=tag:Name,Values=Lab VPC' --query Vpcs[].VpcId --output text)
+echo $LAB_VPC_ID
+
+BASTION_SG_ID=$(aws ec2 create-security-group  --group-name "Bastion Security Group 3" --description "Permit SSH connections" --vpc-id $LAB_VPC_ID --output text)
+echo 123123123 $BASTION_SG_ID
+aws ec2 authorize-security-group-ingress --group-id $BASTION_SG_ID --protocol tcp --port 22 --cidr "0.0.0.0/0"
+
+BASTION_SERVER_ID=$(aws ec2 run-instances \
+--image-id ami-0872c164f38dcc49f \
+--subnet-id $SUBNET \
+--security-group-ids $BASTION_SG_ID \
+--instance-type t3.micro \
+--tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Bastion host 3}]' \
+--associate-public-ip-address \
+--iam-instance-profile Name="Bastion-Role" \
+--query 'Instances[*].InstanceId' \
+--output text)
+
+
