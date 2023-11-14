@@ -1,0 +1,117 @@
+import boto3
+from google.colab import userdata
+import pprint as pp
+# Create a boto3 session
+session = boto3.Session(
+    aws_access_key_id=userdata.get('aws_access_key_id'),
+    aws_secret_access_key=userdata.get('aws_secret_access_key'),
+    aws_session_token=userdata.get('aws_session_token'),
+)
+
+# Create an EC2 client
+ec2 = session.client('ec2', region_name='us-west-2')
+
+response = ec2.describe_images(
+    Filters=[
+        {
+            'Name': 'name',
+            'Values': [
+                'amzn2-ami-kernel-5.10-hvm-2.0.20231101.0-x86_64-gp2',
+            ]
+        },
+    ],
+)
+ami_id=response['Images'][0]['ImageId']
+
+response = ec2.describe_subnets(
+    Filters=[
+        {
+            'Name': 'tag:Name',  # Specify the tag key you want to filter by
+            'Values': [
+                'Public Subnet',
+            ]
+        },
+    ],
+)
+subnet_id=response['Subnets'][0]['SubnetId']
+
+response = ec2.describe_vpcs(
+        Filters=[
+        {
+            'Name': 'tag:Name',  # Specify the tag key you want to filter by
+            'Values': [
+                'Lab VPC',
+            ]
+        },
+    ],
+)
+vpc_id=response['Vpcs'][0]['VpcId']
+
+response = ec2.create_security_group(
+    TagSpecifications=[
+        {
+            'ResourceType': 'security-group',
+            'Tags': [
+                {'Key': 'Name', 'Value': 'Bastion security group'},
+                # Add more tags as needed
+            ],
+        },
+    ],
+    Description='Permit SSH connections',
+    GroupName='Bastion security group',
+    VpcId=vpc_id,
+    DryRun=False
+)
+sg_id=response['GroupId']
+
+response = ec2.authorize_security_group_ingress(
+    GroupId=sg_id,
+    IpPermissions=[
+        {
+            'IpProtocol': 'tcp',  # or 'udp', 'icmp', etc.
+            'FromPort': 22,        # Specify the starting port of the range
+            'ToPort': 22,          # Specify the ending port of the range
+            'IpRanges': [
+                {'CidrIp': '0.0.0.0/0'}  # Allow traffic from any IP address (you can restrict it based on your needs)
+            ],
+        },
+        # You can add more rules as needed
+    ]
+)
+
+# Process the response here
+#pp.pprint(response)
+
+response = ec2.create_key_pair(KeyName="YourKeyPairName")
+private_key = response['KeyMaterial']
+#pp.pprint(private_key)
+
+instances = ec2.run_instances(
+    TagSpecifications=[
+        {
+            'ResourceType': 'instance',
+            'Tags': [
+                {'Key': 'Name', 'Value': 'Bastion host'},
+                # Add more tags as needed
+            ],
+        },
+    ],
+    ImageId=ami_id,
+    SubnetId=subnet_id,
+    SecurityGroupIds=[sg_id],
+    MinCount=1,
+    MaxCount=1,
+    IamInstanceProfile={
+    'Name': 'Bastion-Role'
+},
+    InstanceType="t2.micro",
+    KeyName="YourKeyPairName"
+)
+
+# Describe instances
+response = ec2.describe_instances()
+#pp.pprint(response)
+#Print the instance IDs
+for reservation in response['Reservations']:
+    for instance in reservation['Instances']:
+        print(instance['InstanceId'])
